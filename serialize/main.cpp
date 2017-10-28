@@ -72,8 +72,7 @@ pack_one(lua_State* L, luaL_Buffer* buffer,int index, int depth) {
 
 
 
-void
-pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth) {
+void pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth) {
 	luaL_addstring(buffer, "{\n");
 	int array_size = lua_rawlen(L, index);
 	int i;
@@ -154,11 +153,8 @@ int main()
 		return 0;
 	}
 
-	ok = lua_pcall(L, 1, 1, 0);
-	if (ok != LUA_OK)  {
-		fprintf(stderr, "%s\n", lua_tostring(L, -1));
-		return 0;
-	}
+	lua_call(L, 1, 1);
+
 
 	const char* str = lua_tostring(L, -1);
 	FILE* file = fopen("test.lua", "w");

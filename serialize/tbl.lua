@@ -38,7 +38,7 @@ return {
 		["AreaX"] = 6612,
 		["AreaY"] = 6507,
 		["TriggerId"] = 1000,
-		["TriggerType"] = 0
+		["Trigpe"] = 0
 	}
 },
 }
