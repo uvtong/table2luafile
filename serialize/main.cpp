@@ -78,7 +78,46 @@ void buffer_release(struct write_buffer* buffer)
 
 void pack_table(lua_State* L, struct write_buffer* buffer, int index, int depth);
 
-void pack_one(lua_State* L, struct write_buffer* buffer, int index, int depth)
+void pack_key(lua_State* L, struct write_buffer* buffer, int index, int depth)
+{
+	int type = lua_type(L, index);
+	switch (type)
+	{
+		case LUA_TNUMBER:
+		{
+			int x = (int)lua_tointeger(L, index);
+			lua_Number n = lua_tonumber(L, index);
+			if ((lua_Number)x == n) 
+			{
+				const char* str = lua_pushfstring(L, "%d", x);
+				buffer_addstring(buffer, str);
+				lua_pop(L, 1);
+			}
+			else
+			{
+				const char* str = lua_pushfstring(L, "%f", x);
+				buffer_addstring(buffer, str);
+				lua_pop(L, 1);
+			}
+			break;
+		}
+		case LUA_TSTRING:
+		{
+			size_t sz = 0;
+			const char *str = lua_tolstring(L, index, &sz);
+			buffer_addstring(buffer, "\"");
+			buffer_addlstring(buffer, str, sz);
+			buffer_addstring(buffer, "\"");
+			break;
+		}
+		default:
+			luaL_error(L, "key not support type %s", lua_typename(L, type));
+			break;
+	}
+}
+
+
+void pack_value(lua_State* L, struct write_buffer* buffer, int index, int depth)
 {
 	int type = lua_type(L, index);
 	switch (type)
@@ -98,7 +137,7 @@ void pack_one(lua_State* L, struct write_buffer* buffer, int index, int depth)
 			}
 			else
 			{
-				const char* str = lua_pushfstring(L, "%f", x);
+				const char* str = lua_pushfstring(L, "%f", n);
 				buffer_addstring(buffer, str);
 				lua_pop(L, 1);
 			}
@@ -131,7 +170,7 @@ void pack_one(lua_State* L, struct write_buffer* buffer, int index, int depth)
 		   break;
 		}
 		default:
-			luaL_error(L, "unsupport type %s to serialize", lua_typename(L, type));
+			luaL_error(L, "value no support type %s", lua_typename(L, type));
 			break;
 	}
 }
@@ -146,7 +185,7 @@ void pack_table(lua_State* L, struct write_buffer* buffer, int index, int depth)
 	{
 		lua_rawgeti(L, index, i);
 		tab(buffer, depth);
-		pack_one(L, buffer, -1, depth);
+		pack_value(L, buffer, -1, depth);
 		newline(buffer);
 		lua_pop(L, 1);
 	}
@@ -171,10 +210,10 @@ void pack_table(lua_State* L, struct write_buffer* buffer, int index, int depth)
 		tab(buffer, depth);
 
 		buffer_addstring(buffer, "[");
-		pack_one(L, buffer, -2, depth);
+		pack_key(L, buffer, -2, depth);
 		buffer_addstring(buffer, "] = ");
 
-		pack_one(L, buffer, -1, depth);
+		pack_value(L, buffer, -1, depth);
 
 		newline(buffer);
 
