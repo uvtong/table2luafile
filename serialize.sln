@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.21005.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "serialize", "serialize\serialize.vcxproj", "{CA6D4889-5731-4914-80C4-F187004EECA6}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lua", "lua\lua.vcxproj", "{A11B817F-D2D4-4035-BFF7-771E0C33A368}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CA6D4889-5731-4914-80C4-F187004EECA6}.Debug|Win32.ActiveCfg = Debug|Win32
+		{CA6D4889-5731-4914-80C4-F187004EECA6}.Debug|Win32.Build.0 = Debug|Win32
+		{CA6D4889-5731-4914-80C4-F187004EECA6}.Release|Win32.ActiveCfg = Release|Win32
+		{CA6D4889-5731-4914-80C4-F187004EECA6}.Release|Win32.Build.0 = Release|Win32
+		{A11B817F-D2D4-4035-BFF7-771E0C33A368}.Debug|Win32.ActiveCfg = Debug|Win32
+		{A11B817F-D2D4-4035-BFF7-771E0C33A368}.Debug|Win32.Build.0 = Debug|Win32
+		{A11B817F-D2D4-4035-BFF7-771E0C33A368}.Release|Win32.ActiveCfg = Release|Win32
+		{A11B817F-D2D4-4035-BFF7-771E0C33A368}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
