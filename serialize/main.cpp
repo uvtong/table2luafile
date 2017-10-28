@@ -1,79 +1,145 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
+#include <assert.h>
 extern "C" {
 #include "lua.h"
 #include "lualib.h"
 #include "lauxlib.h"
 }
 
-#define tab(buffer,depth) do {int i;for(i=0;i<depth;i++)luaL_addchar(buffer, '\t');}while(0)
-#define newline(buffer) luaL_addstring(buffer, ",\n")
+#define BUFFER_SIZE 64 * 1024
 
-void pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth);
+struct write_buffer {
+	char* ptr;
+	size_t size;
+	size_t offset;
+	char init[BUFFER_SIZE];
+};
 
-void
-pack_one(lua_State* L, luaL_Buffer* buffer,int index, int depth) {
+void buffer_init(struct write_buffer* buffer)
+{
+	buffer->ptr = buffer->init;
+	buffer->size = BUFFER_SIZE;
+	buffer->offset = 0;
+}
+
+void buffer_reservce(struct write_buffer* buffer, size_t len)
+{
+	if (buffer->offset + len > buffer->size)
+	{
+		size_t nsize = buffer->size * 2;
+		while (nsize < buffer->offset + len)
+		{
+			nsize = nsize * 2;
+		}
+		char* nptr = (char*)malloc(nsize);
+		memset(nptr, 0, nsize);
+		memcpy(nptr, buffer->ptr, buffer->size);
+		buffer->size = nsize;
+
+		if (buffer->ptr != buffer->init)
+			free(buffer->ptr);
+		buffer->ptr = nptr;
+	}
+}
+
+void buffer_addchar(struct write_buffer* buffer, char c)
+{
+	buffer_reservce(buffer, 1);
+	buffer->ptr[buffer->offset++] = c;
+}
+
+void buffer_addstring(struct write_buffer* buffer, const char* str)
+{
+	int len = strlen(str);
+	buffer_reservce(buffer, len);
+	memcpy(buffer->ptr + buffer->offset, str, len);
+	buffer->offset += len;
+}
+
+void buffer_addlstring(struct write_buffer* buffer, const char* str,size_t len)
+{
+	buffer_reservce(buffer, len);
+	memcpy(buffer->ptr + buffer->offset, str, len);
+	buffer->offset += len;
+}
+
+void buffer_release(struct write_buffer* buffer)
+{
+	if (buffer->ptr != buffer->init)
+		free(buffer->ptr);
+}
+
+#define tab(buffer,depth) do {int i;for(i=0;i<depth;i++)buffer_addchar(buffer, '\t');}while(0)
+#define newline(buffer) buffer_addstring(buffer, ",\n")
+
+
+
+void pack_table(lua_State* L, struct write_buffer* buffer, int index, int depth);
+
+void pack_one(lua_State* L, struct write_buffer* buffer, int index, int depth)
+{
 	int type = lua_type(L, index);
 	switch (type)
 	{
-	case LUA_TNIL:
-		luaL_addstring(buffer, "nil");
-		break;
-	case LUA_TNUMBER:
-	{
-		int x = (int)lua_tointeger(L, index);
-		lua_Number n = lua_tonumber(L, index);
-		if ((lua_Number)x == n) 
+		case LUA_TNIL:
+			buffer_addstring(buffer, "nil");
+			break;
+		case LUA_TNUMBER:
 		{
-			const char* str = lua_pushfstring(L, "%d", x);
-			luaL_addstring(buffer, str);
-			lua_pop(L, 1);
+			int x = (int)lua_tointeger(L, index);
+			lua_Number n = lua_tonumber(L, index);
+			if ((lua_Number)x == n) 
+			{
+				const char* str = lua_pushfstring(L, "%d", x);
+				buffer_addstring(buffer, str);
+				lua_pop(L, 1);
+			}
+			else
+			{
+				const char* str = lua_pushfstring(L, "%f", x);
+				buffer_addstring(buffer, str);
+				lua_pop(L, 1);
+			}
+			break;
 		}
-		else
+		case LUA_TBOOLEAN:
 		{
-			const char* str = lua_pushfstring(L, "%f", x);
-			luaL_addstring(buffer, str);
-			lua_pop(L, 1);
+			 int val = lua_toboolean(L, index);
+			 if (val)
+				 buffer_addstring(buffer, "true");
+			 else
+				 buffer_addstring(buffer, "false");
+			 break;
 		}
-		break;
-	}
-	case LUA_TBOOLEAN:
-	{
-						 int val = lua_toboolean(L, index);
-						 if (val)
-							 luaL_addstring(buffer, "true");
-						 else
-							 luaL_addstring(buffer, "false");
-						 break;
-	}
-	case LUA_TSTRING:
-	{
-		size_t sz = 0;
-		const char *str = lua_tolstring(L, index, &sz);
-		luaL_addstring(buffer, "\"");
-		luaL_addlstring(buffer, str,sz);
-		luaL_addstring(buffer, "\"");
-		break;
-	}
-	case LUA_TTABLE:
-		if (index < 0) {
-			index = lua_gettop(L) + index + 1;
+		case LUA_TSTRING:
+		{
+			size_t sz = 0;
+			const char *str = lua_tolstring(L, index, &sz);
+			buffer_addstring(buffer, "\"");
+			buffer_addlstring(buffer, str, sz);
+			buffer_addstring(buffer, "\"");
+			break;
 		}
-		pack_table(L, buffer,index, ++depth);
-		break;
-	default:
-
-		luaL_error(L, "unsupport type %s to serialize", lua_typename(L, type));
-		break;
+		case LUA_TTABLE:
+		{
+		   if (index < 0) {
+			   index = lua_gettop(L) + index + 1;
+		   }
+		   pack_table(L, buffer, index, ++depth);
+		   break;
+		}
+		default:
+			luaL_error(L, "unsupport type %s to serialize", lua_typename(L, type));
+			break;
 	}
 }
 
 
 
-void pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth) {
-	luaL_addstring(buffer, "{\n");
+void pack_table(lua_State* L, struct write_buffer* buffer, int index, int depth) {
+	buffer_addstring(buffer, "{\n");
 	int array_size = lua_rawlen(L, index);
 	int i;
 	for (i = 1; i <= array_size; i++)
@@ -104,9 +170,10 @@ void pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth) {
 
 		tab(buffer, depth);
 
-		luaL_addstring(buffer, "[");
+		buffer_addstring(buffer, "[");
 		pack_one(L, buffer, -2, depth);
-		luaL_addstring(buffer, "] = ");
+		buffer_addstring(buffer, "] = ");
+
 		pack_one(L, buffer, -1, depth);
 
 		newline(buffer);
@@ -114,23 +181,24 @@ void pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth) {
 		lua_pop(L, 1);
 	}
 	tab(buffer, depth-1);
-	luaL_addstring(buffer, "}");
+	buffer_addstring(buffer, "}");
 }
 
-static int
-serialze(lua_State* L) {
+static int serialze(lua_State* L) 
+{
 	int type = lua_type(L, 1);
 	if (type != LUA_TTABLE)
 		luaL_error(L, "must be table");
 	
-	luaL_Buffer buffer;
-	luaL_buffinit(L, &buffer);
-
-	luaL_addstring(&buffer, "return");
+	struct write_buffer buffer;
+	buffer_init(&buffer);
+	buffer_addstring(&buffer, "return");
 
 	pack_table(L, &buffer, 1, 1);
 
-	luaL_pushresult(&buffer);
+	lua_pushlstring(L, buffer.ptr, buffer.offset);
+
+	buffer_release(&buffer);
 	return 1;
 }
 
