@@ -8,6 +8,9 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#define tab(buffer,depth) do {int i;for(i=0;i<depth;i++)luaL_addchar(buffer, '\t');}while(0)
+#define newline(buffer) luaL_addstring(buffer, ",\n")
+
 void pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth);
 
 void
@@ -40,17 +43,9 @@ pack_one(lua_State* L, luaL_Buffer* buffer,int index, int depth) {
 	{
 						 int val = lua_toboolean(L, index);
 						 if (val)
-						 {
-							 const char* str = lua_pushfstring(L, "true");
-							 luaL_addstring(buffer, str);
-							 lua_pop(L, 1);
-						 }
+							 luaL_addstring(buffer, "true");
 						 else
-						 {
-							 const char* str = lua_pushfstring(L, "false");
-							 luaL_addstring(buffer, str);
-							 lua_pop(L, 1);
-						 }
+							 luaL_addstring(buffer, "false");
 						 break;
 	}
 	case LUA_TSTRING:
@@ -81,16 +76,13 @@ void
 pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth) {
 	luaL_addstring(buffer, "{\n");
 	int array_size = lua_rawlen(L, index);
-	int top = lua_gettop(L);
 	int i;
 	for (i = 1; i <= array_size; i++)
 	{
 		lua_rawgeti(L, index, i);
-		int t;
-		for (t = 0; t < depth;t++)
-			luaL_addchar(buffer, '\t');
+		tab(buffer, depth);
 		pack_one(L, buffer, -1, depth);
-		luaL_addstring(buffer, ",\n");
+		newline(buffer);
 		lua_pop(L, 1);
 	}
 
@@ -110,22 +102,19 @@ pack_table(lua_State* L, luaL_Buffer* buffer, int index, int depth) {
 				}
 			}
 		}
-		int t;
-		for (t = 0; t < depth; t++)
-			luaL_addchar(buffer, '\t');
+
+		tab(buffer, depth);
 
 		luaL_addstring(buffer, "[");
 		pack_one(L, buffer, -2, depth);
 		luaL_addstring(buffer, "] = ");
 		pack_one(L, buffer, -1, depth);
 
-		luaL_addstring(buffer, ",\n");
+		newline(buffer);
 
 		lua_pop(L, 1);
 	}
-	int t;
-	for (t = 0; t < depth-1; t++)
-		luaL_addchar(buffer, '\t');
+	tab(buffer, depth-1);
 	luaL_addstring(buffer, "}");
 }
 
