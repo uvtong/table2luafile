@@ -3,6 +3,8 @@
 
 import "other"
 
+import "other"
+
 protocol test_1{
 int[] A
 	string B	}

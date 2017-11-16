@@ -309,6 +309,10 @@ void lexer_init(struct lexer* l, struct protocol* root, protocol_begin_func ptl_
 		l->root = root;
 	else
 		l->root = create_protocol("root");
+	l->file_hash.offset = 0;
+	l->file_hash.size = 16;
+	l->file_hash.name = (char**)malloc(sizeof(char*)* l->file_hash.size);
+	memset(l->file_hash.name, 0, sizeof(char*)* l->file_hash.size);
 
 	l->protocol_begin = ptl_begin;
 	l->protocol_over = ptl_over;
@@ -316,9 +320,34 @@ void lexer_init(struct lexer* l, struct protocol* root, protocol_begin_func ptl_
 	l->field_over = field_over;
 }
 
-void query_file(struct lexer* l, char* file)
+bool exist_file(struct lexer* l, char* file)
 {
+	int i;
+	for (i = 0; i < l->file_hash.offset;i++)
+	{
+		char* tmp = l->file_hash.name[i];
+		if (memcmp(tmp,file,strlen(file)) == 0)
+			return true;
+	}
+	return false;
+}
 
+void parse_done(struct lexer* l, char* file)
+{
+	if (l->file_hash.offset == l->file_hash.size)
+	{
+		int nsize = l->file_hash.size;
+		char** nptr = (char**)malloc(sizeof(char*)*nsize);
+		memset(nptr, 0, sizeof(char*)*nsize);
+		memcpy(nptr, l->file_hash.name, l->file_hash.size*sizeof(char*));
+		free(l->file_hash.name);
+		l->file_hash.size = nsize;
+		l->file_hash.name = nptr;
+	}
+	char* tmp = (char*)malloc(strlen(file) + 1);
+	memcpy(tmp, file, strlen(file));
+	tmp[strlen(file)] = '\0';
+	l->file_hash.name[l->file_hash.offset++] = tmp;
 }
 
 static int eos(struct lexer *l, int n)
@@ -421,6 +450,7 @@ int lexer_parse_file(struct lexer* l, const char* file)
 		{
 			lexer_parse(l, l->root);
 		}
+		parse_done(l->main, (char*)file);
 		return 0;
 	}
 	return -1;
@@ -640,7 +670,11 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 			THROW(l);
 		}
-		import_protocol(l, name);
+
+		if (exist_file(l->main, name) == false)
+			import_protocol(l, name);
+		
+		
 		skip(l, strlen(name) + 2);
 		if (!expect_space(l, 0))
 		{
