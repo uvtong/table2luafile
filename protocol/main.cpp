@@ -193,6 +193,7 @@ void parser_init(struct parser* parser, const char* file,void* ud, protocol_begi
 	int len = ftell(file_handle);
 	parser->offset = 0;
 	parser->size = len;
+	parser->line = 1;
 	parser->c = (char*)malloc(len+1);
 	memset(parser->c, 0, len + 1);
 	rewind(file_handle);
@@ -260,29 +261,158 @@ static void next_token(struct parser *p)
 	return;
 }
 
-void parser_run(struct parser* parser)
+static void skip(struct parser* p, int size)
 {
+	char *n = p->c;
+	int index = 0;
+	while (!eos(p) && index < size)
+	{
+		n++;
+		index++;
+	}
+		
+	p->c = n;
+}
 
+static bool expect(struct parser* p,int offset,char c)
+{
+	return *(p->c + offset) == c;
+}
+
+static bool expect_space(struct parser* p, int offset)
+{
+	return isspace(*(p->c + offset));
+}
+
+
+
+static const char* builtin_type[] = { "int","number", "string", "protocol"};
+
+void parser_run(struct parser* p)
+{
+	skip_space(p);
+	char name[65];
+	memset(name, 0, 65);
+	char* c = p->c;
+	int err = sscanf(p->c, "%64[1-9a-zA-Z]", name);
+	if (err == 0) {
+		fprintf(stderr, "line:%d syntax error", p->line);
+		return;
+	}
+
+	int name_length = strlen(name);
+
+	if (memcmp(name, "protocol", name_length) == 0)
+	{
+		if (isspace(*(p->c + name_length)) == 0)
+		{
+			fprintf(stderr, "line:%d syntax error", p->line);
+			return;
+		}
+		next_token(p);
+		err = sscanf(p->c, "%64[1-9a-zA-Z]", name);
+		p->protocol_begin(p->table, name);
+
+		name_length = strlen(name);
+		if (!expect_space(p, name_length) && !expect(p,name_length,'{'))
+		{
+			fprintf(stderr, "line:%d syntax error", p->line);
+			return;
+		}
+		skip(p, name_length);
+	}
+	else
+	{
+		fprintf(stderr, "line:%d syntax error", p->line);
+		return;
+	}
+
+	skip_space(p);
+	if (!expect(p, 0, '{'))
+	{
+		fprintf(stderr, "line:%d syntax error", p->line);
+		return;
+	}
+	while (!eos(p))
+	{
+		next_token(p);
+		if (expect(p, 0, '}'))
+		{
+			next_token(p);
+			p->protocol_over(p->table);
+			break;
+		}
+		memset(name, 0, 65);
+		err = sscanf(p->c, "%64s", name);
+		if (err == 0)
+		{
+			fprintf(stderr, "line:%d syntax error", p->line);
+			return;
+		}
+		int len = strlen(name);
+		bool success = false;
+		for (int i = 0; i < sizeof(builtin_type) / sizeof(void*); i++)
+		{
+			if (memcmp(name, builtin_type[i], len) == 0)
+			{
+				success = true;
+				break;
+			}
+		}
+		if (!success)
+		{
+			fprintf(stderr, "line:%d syntax error:unknown type:%s\n", p->line, name);
+			return;
+		}
+
+		if (expect_space(p,len) == 0)
+		{
+			fprintf(stderr, "line:%d syntax error", p->line);
+			return;
+		}
+
+		if (memcmp(name, "protocol", len) == 0)
+		{
+			parser_run(p);
+			continue;
+		}
+		else
+		{
+			p->field_begin(p->table, name);
+		}
+
+		next_token(p);
+		memset(name, 0, 65);
+		err = sscanf(p->c, "%64s", name);
+		if (err == 0)
+		{
+			fprintf(stderr, "line:%d syntax error", p->line);
+			return;
+		}
+		len = strlen(name);
+		p->field_over(p->table, name);
+	}
+	
 }
 
 void protobol_begin(void* userdata, const char* name)
 {
-
+	printf("protobol_begin:%s\n", name);
 }
 
 void protobol_over(void* userdata)
 {
-
+	printf("protobol_over\n");
 }
 
 void field_begin(void* userdata, const char* field_type)
 {
-
+	printf("field_begin:%s\n", field_type);
 }
 
 void field_over(void* userdata, const char* field_name)
 {
-
+	printf("field_over:%s\n", field_name);
 }
 
 
@@ -290,4 +420,9 @@ int main()
 {
 	struct parser p;
 	parser_init(&p, "test.protocol", NULL, protobol_begin, protobol_over, field_begin, field_over);
+	while (!eos(&p))
+	{
+		parser_run(&p);
+	}
+	
 }
