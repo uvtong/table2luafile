@@ -1,0 +1,8 @@
+
+
+
+protocol Message {
+	int id
+	string name
+
+}

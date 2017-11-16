@@ -62,19 +62,29 @@ typedef void(*protocol_over_func)(struct protocol_table* table);
 typedef void(*field_begin_func)(struct protocol* ptl,const char* field_type);
 typedef void(*field_over_func)(struct protocol* ptl, const char* field_name);
 
-struct lexer {
-	char* c;
+
+struct file_hash {
+	char** name;
 	int offset;
 	int size;
+};
+
+struct lexer {
+	char* c;
 	int line;
+	char* file;
+
 	jmp_buf exception;
 	struct protocol* root;
+
+	struct file_hash file_hash;
 
 	protocol_begin_func protocol_begin;
 	protocol_over_func protocol_over;
 	field_begin_func field_begin;
 	field_begin_func field_over;
 };
+
 
 size_t strhash(const char *str)
 {
@@ -291,27 +301,20 @@ void dump_protocol(struct protocol* root,int depth)
 	}
 }
 
-void lexer_init(struct lexer* parser, const char* file, void* ud, protocol_begin_func ptl_begin, protocol_over_func ptl_over, field_begin_func field_begin, field_over_func field_over)
+void lexer_init(struct lexer* l, struct protocol* root, protocol_begin_func ptl_begin, protocol_over_func ptl_over, field_begin_func field_begin, field_over_func field_over)
 {
-	FILE *file_handle = fopen(file, "r");
-	fseek(file_handle, 0, SEEK_END);
-	int len = ftell(file_handle);
-	parser->offset = 0;
-	parser->size = len;
-	parser->line = 1;
-	parser->c = (char*)malloc(len+1);
-	memset(parser->c, 0, len + 1);
-	rewind(file_handle);
-	fread(parser->c, 1, len, file_handle);
-	parser->c[len] = 0;
-	fclose(file_handle);
+	if (root)
+		l->root = root;
+	else
+		l->root = create_protocol("root");
 
-	parser->root = create_protocol(file);
-	parser->protocol_begin = ptl_begin;
-	parser->protocol_over = ptl_over;
-	parser->field_begin = field_begin;
-	parser->field_over = field_over;
+	l->protocol_begin = ptl_begin;
+	l->protocol_over = ptl_over;
+	l->field_begin = field_begin;
+	l->field_over = field_over;
 }
+
+
 
 static int eos(struct lexer *l, int n)
 {
@@ -389,10 +392,84 @@ static bool expect_space(struct lexer* l, int offset)
 	return isspace(*(l->c + offset));
 }
 
+void lexer_parse(struct lexer* l, struct protocol* parent);
+
+int lexer_parse_file(struct lexer* l, const char* file)
+{
+	FILE *file_handle = fopen(file, "r");
+	fseek(file_handle, 0, SEEK_END);
+	int len = ftell(file_handle);
+	l->c = (char*)malloc(len + 1);
+	memset(l->c, 0, len + 1);
+	rewind(file_handle);
+	fread(l->c, 1, len, file_handle);
+	l->c[len] = 0;
+	fclose(file_handle);
+
+	l->line = 1;
+	l->file = (char*)malloc(strlen(file) + 1);
+	memcpy(l->file, file, strlen(file));
+	l->file[strlen(file)] = '\0';
+
+	TRY(l) {
+		while (!eos(l, 0))
+		{
+			lexer_parse(l, l->root);
+		}
+		return 0;
+	}
+	return -1;
+}
+
+struct protocol* protobol_begin(struct protocol_table* table, const char* name)
+{
+	printf("protobol_begin:%s\n", name);
+	struct protocol* ptl = create_protocol(name);
+	add_protocol(table, ptl);
+	return ptl;
+}
+
+void protobol_over(struct protocol_table* table)
+{
+	printf("protobol_over\n");
+}
+
+void field_begin(struct protocol* ptl, const char* field_type)
+{
+	printf("field_begin:%s\n", field_type);
+	int len = strlen(field_type);
+	ptl->lastfield = (char*)malloc(len + 1);
+	memcpy(ptl->lastfield, field_type, len);
+	ptl->lastfield[len] = '\0';
+}
+
+void field_over(struct protocol* ptl, const char* field_name)
+{
+	printf("field_over:%s\n", field_name);
+	int len = strlen(field_name);
+	char* fname = (char*)malloc(len + 1);
+	memcpy(fname, field_name, len);
+	fname[len] = '\0';
+
+	struct field* f = create_field(ptl, ptl->lastfield, fname);
+	add_field(ptl, f);
+
+	ptl->lastfield = NULL;
+}
+
+void lexer_parse(struct lexer* l, struct protocol* parent);
 
 void import_protocol(struct lexer* l,char* name)
 {
-
+	struct lexer import_lexer;
+	char file[64];
+	memset(file,0,64);
+	sprintf(file,"%s.protocol",name);
+	lexer_init(&import_lexer, l->root, protobol_begin, protobol_over, field_begin, field_over);
+	if (lexer_parse_file(&import_lexer, file) < 0)
+	{
+		THROW(l);
+	}
 }
 
 void parse_protocol(struct lexer* l, struct protocol* parent)
@@ -408,13 +485,13 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 	//协议名不能超过64
 	if (!expect_space(l, len) && !expect(l, len, '{'))
 	{
-		fprintf(stderr, "line:%d syntax error:protocol name:%s too long", l->line,name);
+		fprintf(stderr, "file:%s@line:%d syntax error:protocol name:%s too long", l->file, l->line, name);
 		THROW(l);
 	}
 
 	struct protocol* optl = query_protocol(parent->children,name);
 	if (optl) {
-		fprintf(stderr, "line:%d syntax error:protocol name:%s already define\n", l->line,name);
+		fprintf(stderr, "file:%s@line:%d syntax error:protocol name:%s already define\n", l->file, l->line, name);
 		THROW(l);
 	}
 
@@ -430,14 +507,14 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 	//协议名后有>=0个空格，空格之后必须是{
 	if (!expect(l, 0, '{'))
 	{
-		fprintf(stderr, "line:%d syntax error", l->line);
+		fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 		THROW(l);
 	}
 
 	//{之后必有空格
 	if (!expect_space(l, 1))
 	{
-		fprintf(stderr, "line:%d syntax error:expect space", l->line);
+		fprintf(stderr, "file:%s@line:%d syntax error:expect space", l->file, l->line);
 		THROW(l);
 	}
 	while (!eos(l,0))
@@ -449,7 +526,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		{
 			if (!eos(l,1) && !expect_space(l, 1))
 			{
-				fprintf(stderr, "line:%d syntax error", l->line);
+				fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 				THROW(l);
 			}
 			l->protocol_over(parent->children);
@@ -460,7 +537,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		err = sscanf(l->c, "%64s", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "line:%d syntax error", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 			THROW(l);
 		}
 		int len = strlen(name);
@@ -488,14 +565,14 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 			struct protocol* protocol = query_protocol(parent->children, name);
 			if (protocol == NULL)
 			{
-				fprintf(stderr, "line:%d syntax error:unknown type:%s\n", l->line, name);
+				fprintf(stderr, "file:%s@line:%d syntax error:unknown type:%s\n", l->file, l->line, name);
 				THROW(l);
 			}			
 		}
 
 		if (expect_space(l,len) == 0)
 		{
-			fprintf(stderr, "line:%d syntax error", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 			THROW(l);
 		}
 
@@ -506,7 +583,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "line:%d syntax error", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 			THROW(l);
 		}
 		len = strlen(name);
@@ -515,7 +592,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		//每一个字段名之后，必有空格
 		if (!expect_space(l, len))
 		{
-			fprintf(stderr, "line:%d syntax error:expect space", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error:expect space",l->file, l->line);
 			THROW(l);
 		}
 	}
@@ -529,7 +606,7 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 
 	int err = sscanf(l->c, "%64[1-9a-zA-Z]", name);
 	if (err == 0) {
-		fprintf(stderr, "line:%d syntax error", l->line);
+		fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 		THROW(l);
 	}
 
@@ -543,80 +620,38 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 	{
 		if (!expect_space(l,len))
 		{
-			fprintf(stderr, "line:%d syntax error:expect space\n", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error:expect space\n", l->file, l->line);
 			THROW(l);
 		}
 		next_token(l);
 		if (!expect(l,0,'\"'))
 		{
-			fprintf(stderr, "line:%d syntax error:expect \"\n", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error:expect \"\n", l->file, l->line);
 			THROW(l);
 		}
 		err = sscanf(l->c, "\"%64[^\"]\"", name);
 		if (err == 0) {
-			fprintf(stderr, "line:%d syntax error", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
 			THROW(l);
 		}
 		import_protocol(l, name);
 		skip(l, strlen(name) + 2);
 		if (!expect_space(l, 0))
 		{
-			fprintf(stderr, "line:%d syntax error:expect space\n", l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error:expect space\n",l->file, l->line);
 			THROW(l);
 		}
 		return;
 	}
-	fprintf(stderr, "line:%d syntax error:unknown %s", l->line,name);
+	fprintf(stderr, "file:%s@line:%d syntax error:unknown %s", l->file, l->line, name);
 	THROW(l);
-}
-
-struct protocol* protobol_begin(struct protocol_table* table, const char* name)
-{
-	printf("protobol_begin:%s\n", name);
-	struct protocol* ptl = create_protocol(name);
-	add_protocol(table, ptl);
-	return ptl;
-}
-
-void protobol_over(struct protocol_table* table)
-{
-	printf("protobol_over\n");
-}
-
-void field_begin(struct protocol* ptl, const char* field_type)
-{
-	printf("field_begin:%s\n", field_type);
-	int len = strlen(field_type);
-	ptl->lastfield = (char*)malloc(len+1);
-	memcpy(ptl->lastfield, field_type, len);
-	ptl->lastfield[len] = '\0';
-}
-
-void field_over(struct protocol* ptl, const char* field_name)
-{
-	printf("field_over:%s\n", field_name);
-	int len = strlen(field_name);
-	char* fname = (char*)malloc(len + 1);
-	memcpy(fname, field_name, len);
-	fname[len] = '\0';
-
-	struct field* f = create_field(ptl,ptl->lastfield, fname);
-	add_field(ptl, f);
-
-	ptl->lastfield = NULL;
 }
 
 
 int main()
 {
 	struct lexer l;
-	lexer_init(&l, "test.protocol", NULL, protobol_begin, protobol_over, field_begin, field_over);
-	TRY(&l) {
-		while (!eos(&l,0))
-		{
-			lexer_parse(&l, l.root);
-		}
-	}
-
+	lexer_init(&l, NULL, protobol_begin, protobol_over, field_begin, field_over);
+	lexer_parse_file(&l, "test.protocol");
 	dump_protocol(l.root,0);
 }
