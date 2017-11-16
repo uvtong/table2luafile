@@ -541,7 +541,30 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 	}
 	else if (memcmp(name, "import", len) == 0)
 	{
-		return import_protocol(l,NULL);
+		if (!expect_space(l,len))
+		{
+			fprintf(stderr, "line:%d syntax error:expect space\n", l->line);
+			THROW(l);
+		}
+		next_token(l);
+		if (!expect(l,0,'\"'))
+		{
+			fprintf(stderr, "line:%d syntax error:expect \"\n", l->line);
+			THROW(l);
+		}
+		err = sscanf(l->c, "\"%64[^\"]\"", name);
+		if (err == 0) {
+			fprintf(stderr, "line:%d syntax error", l->line);
+			THROW(l);
+		}
+		import_protocol(l, name);
+		skip(l, strlen(name) + 2);
+		if (!expect_space(l, 0))
+		{
+			fprintf(stderr, "line:%d syntax error:expect space\n", l->line);
+			THROW(l);
+		}
+		return;
 	}
 	fprintf(stderr, "line:%d syntax error:unknown %s", l->line,name);
 	THROW(l);
