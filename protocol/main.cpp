@@ -389,30 +389,21 @@ static bool expect_space(struct lexer* l, int offset)
 	return isspace(*(l->c + offset));
 }
 
-void lexer_parse(struct lexer* l, struct protocol* parent)
+
+void import_protocol(struct lexer* l,char* name)
 {
-	skip_space(l);
+
+}
+
+void parse_protocol(struct lexer* l, struct protocol* parent)
+{
 	char name[65];
 	memset(name, 0, 65);
 
-	int err = sscanf(l->c, "%64[1-9a-zA-Z]", name);
-	if (err == 0) {
-		fprintf(stderr, "line:%d syntax error", l->line);
-		THROW(l);
-	}
-
-	int len = strlen(name);
-	if (memcmp(name, "protocol", len) != 0)
-	{
-		fprintf(stderr, "line:%d syntax error:expect protocol", l->line);
-		THROW(l);
-	}
-
 	next_token(l);
 
-	memset(name, 0, 65);
-	err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
-	len = strlen(name);
+	int err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
+	int len = strlen(name);
 
 	//协议名不能超过64
 	if (!expect_space(l, len) && !expect(l, len, '{'))
@@ -476,7 +467,7 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 
 		if (memcmp(name, "protocol", len) == 0)
 		{
-			lexer_parse(l, ptl);
+			parse_protocol(l, ptl);
 			if (expect_space(l, 0))
 				continue;
 			else
@@ -528,7 +519,32 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 			THROW(l);
 		}
 	}
+}
+
+void lexer_parse(struct lexer* l, struct protocol* parent)
+{
+	skip_space(l);
+	char name[65];
+	memset(name, 0, 65);
+
+	int err = sscanf(l->c, "%64[1-9a-zA-Z]", name);
+	if (err == 0) {
+		fprintf(stderr, "line:%d syntax error", l->line);
+		THROW(l);
+	}
+
+	int len = strlen(name);
+	if (memcmp(name, "protocol", len) == 0)
+	{
+		return parse_protocol(l, parent);
 	
+	}
+	else if (memcmp(name, "import", len) == 0)
+	{
+		return import_protocol(l,NULL);
+	}
+	fprintf(stderr, "line:%d syntax error:unknown %s", l->line,name);
+	THROW(l);
 }
 
 struct protocol* protobol_begin(struct protocol_table* table, const char* name)
