@@ -355,7 +355,7 @@ void parser_run(struct parser* p,struct protocol* parent)
 	int len = strlen(name);
 	if (memcmp(name, "protocol", len) != 0)
 	{
-		fprintf(stderr, "line:%d syntax error", p->line);
+		fprintf(stderr, "line:%d syntax error:expect protocol", p->line);
 		THROW(p);
 	}
 
@@ -369,7 +369,7 @@ void parser_run(struct parser* p,struct protocol* parent)
 	len = strlen(name);
 	if (!expect_space(p, len) && !expect(p, len, '{'))
 	{
-		fprintf(stderr, "line:%d syntax error", p->line);
+		fprintf(stderr, "line:%d syntax error:protocol name:%s too long", p->line,name);
 		THROW(p);
 	}
 	skip(p, len);
@@ -382,6 +382,8 @@ void parser_run(struct parser* p,struct protocol* parent)
 	}
 	while (!eos(p))
 	{
+		/*	skip(p, 1);
+			skip_space(p);*/
 		next_token(p);
 
 	__again:
