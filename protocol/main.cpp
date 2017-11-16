@@ -271,8 +271,15 @@ void dump_protocol(struct protocol* root,int depth)
 	{
 		struct field* f = root->field[i];
 		for (int i = 0; i < depth; ++i)
-		printf("\t");
-		printf("field type:%d,name:%s\n",f->field_type.type,f->name);
+			printf("\t");
+
+		printf("field type:%d,",f->field_type.type);
+		if (f->field_type.type == TYPE_PROTOCOL || f->field_type.type == TYPE_PROTOCOL_ARRAY) {
+			printf("type name:%s,",f->field_type.protocol->name);
+		} else {
+			printf("type name:%s,",builtin_type[f->field_type.type]);
+		}
+		printf("field name:%s\n",f->name);
 	}
 }
 
