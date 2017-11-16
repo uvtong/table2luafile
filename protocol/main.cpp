@@ -74,6 +74,8 @@ struct lexer {
 	int line;
 	char* file;
 
+	struct lexer* main;
+
 	jmp_buf exception;
 	struct protocol* root;
 
@@ -314,7 +316,10 @@ void lexer_init(struct lexer* l, struct protocol* root, protocol_begin_func ptl_
 	l->field_over = field_over;
 }
 
+void query_file(struct lexer* l, char* file)
+{
 
+}
 
 static int eos(struct lexer *l, int n)
 {
@@ -465,7 +470,8 @@ void import_protocol(struct lexer* l,char* name)
 	char file[64];
 	memset(file,0,64);
 	sprintf(file,"%s.protocol",name);
-	lexer_init(&import_lexer, l->root, protobol_begin, protobol_over, field_begin, field_over);
+	lexer_init(&import_lexer, l->main->root, protobol_begin, protobol_over, field_begin, field_over);
+	import_lexer.main = l->main;
 	if (lexer_parse_file(&import_lexer, file) < 0)
 	{
 		THROW(l);
@@ -652,6 +658,7 @@ int main()
 {
 	struct lexer l;
 	lexer_init(&l, NULL, protobol_begin, protobol_over, field_begin, field_over);
+	l.main = &l;
 	lexer_parse_file(&l, "test.protocol");
 	dump_protocol(l.root,0);
 }
