@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <ctype.h>
 extern "C" {
 #include "lua.h"
 #include "lualib.h"
@@ -36,10 +37,21 @@ struct protocol_table {
 	int size;
 };
 
+typedef void(*protocol_begin_func)(void* userdata, const char* name);
+typedef void(*protocol_over_func)(void* userdata);
+typedef void(*field_begin_func)(void* userdata,const char* field_type);
+typedef void(*field_over_func)(void* userdata, const char* field_name);
+
 struct parser {
 	char* c;
 	int offset;
 	int size;
+	int line;
+	struct protocol_table* table;
+	protocol_begin_func protocol_begin;
+	protocol_over_func protocol_over;
+	field_begin_func field_begin;
+	field_begin_func field_over;
 };
 
 int strhash(const char *str)
@@ -49,13 +61,9 @@ int strhash(const char *str)
 	for (long i = 0; ch = (int)*str++; i++)
 	{
 		if ((i & 1) == 0)
-		{
 			hash ^= ((hash << 7) ^ ch ^ (hash >> 3));
-		}
 		else
-		{
 			hash ^= (~((hash << 11) ^ ch ^ (hash >> 5)));
-		}
 	}
 	return hash;
 }
@@ -174,36 +182,112 @@ struct protocol* create_protocol(const char* name)
 	ctx->size = 0;
 	ctx->field = (struct field**)malloc(sizeof(struct field*) * ctx->cap);
 	memset(ctx->field, 0, sizeof(struct field*) * ctx->cap);
+
+	return ctx;
 }
 
-void parser_file(struct parser* parser, struct protocol_table* table)
+void parser_init(struct parser* parser, const char* file,void* ud, protocol_begin_func ptl_begin, protocol_over_func ptl_over, field_begin_func field_begin, field_over_func field_over)
+{
+	FILE *file_handle = fopen(file, "r");
+	fseek(file_handle, 0, SEEK_END);
+	int len = ftell(file_handle);
+	parser->offset = 0;
+	parser->size = len;
+	parser->c = (char*)malloc(len+1);
+	memset(parser->c, 0, len + 1);
+	rewind(file_handle);
+	fread(parser->c, 1, len, file_handle);
+	parser->c[len] = 0;
+	fclose(file_handle);
+
+	parser->table = create_table(16);
+	parser->protocol_begin = ptl_begin;
+	parser->protocol_over = ptl_over;
+	parser->field_begin = field_begin;
+	parser->field_over = field_over;
+}
+
+static int eos(struct parser *p)
+{
+	if (*(p->c) == 0)
+		return 1;
+	else
+		return 0;
+}
+
+static void skip_space(struct parser *p);
+
+static void next_line(struct parser *p)
+{
+	char *n = p->c;
+	while (*n != '\n' && *n)
+		n++;
+	if (*n == '\n')
+		n++;
+	p->line++;
+	p->c = n;
+	skip_space(p);
+
+	return;
+}
+
+static void skip_space(struct parser *p)
+{
+	char *n = p->c;
+	while (isspace(*n) && *n) {
+		if (*n == '\n')
+			p->line++;
+		n++;
+	}
+
+	p->c = n;
+	if (*n == '#' && *n)
+		next_line(p);
+
+	return;
+}
+
+static void next_token(struct parser *p)
+{
+	char *n;
+	skip_space(p);
+	n = p->c;
+	while (!isspace(*n) && *n)
+		n++;
+	p->c = n;
+	skip_space(p);
+
+	return;
+}
+
+void parser_run(struct parser* parser)
 {
 
 }
+
+void protobol_begin(void* userdata, const char* name)
+{
+
+}
+
+void protobol_over(void* userdata)
+{
+
+}
+
+void field_begin(void* userdata, const char* field_type)
+{
+
+}
+
+void field_over(void* userdata, const char* field_name)
+{
+
+}
+
+
 int main()
 {
-	lua_State* L = luaL_newstate();
-	luaL_openlibs(L);
-
-	//lua_pushcfunction(L, serialze);
-
-	int ok = luaL_loadfile(L, "tbl.lua");
-	if (ok != LUA_OK)  {
-		fprintf(stderr, "%s\n", lua_tostring(L, -1));
-		return 0;
-	}
-
-	ok = lua_pcall(L, 0, 1, 0);
-	if (ok != LUA_OK)  {
-		fprintf(stderr, "%s\n", lua_tostring(L, -1));
-		return 0;
-	}
-
-	lua_call(L, 1, 1);
-
-
-	const char* str = lua_tostring(L, -1);
-	FILE* file = fopen("test.lua", "w");
-	fwrite(str, 1, strlen(str), file);
-	fclose(file);
+	struct parser p;
+	parser_init(&p, "test.protocol", NULL, protobol_begin, protobol_over, field_begin, field_over);
 }
