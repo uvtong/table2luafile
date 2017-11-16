@@ -14,14 +14,21 @@ extern "C" {
 #define TRY(p) if (setjmp((p)->exception) == 0)
 #define THROW(p) longjmp((p)->exception, 1)
 
-union field_type {
-	int builtin;
+#define TYPE_INT		0
+#define TYPE_NUMBER		1
+#define TYPE_STRING		2
+#define TYPE_PROTOCOL	3
+
+static const char* builtin_type[] = { "int", "number", "string", "protocol" };
+
+struct field_type {
+	int type;
 	struct protocol* protocol;
 };
 
 struct field {
 	char* name;
-	union field_type field_type;
+	struct field_type field_type;
 };
 
 struct protocol_table;
@@ -182,9 +189,38 @@ void add_field(struct protocol* protocol, struct field* f)
 
 struct field* create_field(struct protocol* ptl,char* field_type, char* field_name)
 {
+	int ftype = TYPE_PROTOCOL;
+	for (int i = 0; i < sizeof(builtin_type) / sizeof(void*); i++)
+	{
+		if (memcmp(field_type, builtin_type[i], strlen(field_type)) == 0)
+		{
+			ftype = i;
+			break;
+		}
+	}
+
 	struct field* f = (struct field*)malloc(sizeof(*f));
 	memset(f, 0, sizeof(*f));
 	f->name = field_name;
+	f->field_type.type = ftype;
+	f->field_type.protocol = NULL;
+
+	if (ftype == TYPE_PROTOCOL)
+	{	
+		struct protocol* cursor = ptl;
+		while (cursor)
+		{
+			struct protocol* tmp = query_protocol(cursor->children,field_type);
+			if (tmp)
+			{
+				f->field_type.protocol = tmp;
+				break;
+			}
+			cursor = cursor->parent;
+		}
+		assert(f->field_type.protocol != NULL);
+	}
+
 	return f;
 }
 
@@ -303,8 +339,6 @@ static bool expect_space(struct parser* p, int offset)
 {
 	return isspace(*(p->c + offset));
 }
-
-static const char* builtin_type[] = { "int","number", "string", "protocol"};
 
 void parser_run(struct parser* p,struct protocol* parent)
 {
