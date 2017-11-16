@@ -4,11 +4,15 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <ctype.h>
+#include <setjmp.h>
 extern "C" {
 #include "lua.h"
 #include "lualib.h"
 #include "lauxlib.h"
 }
+
+#define TRY(p) if (setjmp((p)->exception) == 0)
+#define THROW(p) longjmp((p)->exception, 1)
 
 union field_type {
 	int builtin;
@@ -16,7 +20,7 @@ union field_type {
 };
 
 struct field {
-	const char* name;
+	char* name;
 	union field_type field_type;
 };
 
@@ -24,12 +28,15 @@ struct protocol_table;
 
 struct protocol {
 	struct protocol* next;
-	struct protocol_table* nest;
+	struct protocol* parent;
+	struct protocol_table* children;
 
-	const char* name;
+	char* name;
 	struct field** field;
 	int cap;
 	int size;
+
+	char* lastfield;
 };
 
 struct protocol_table {
@@ -37,26 +44,27 @@ struct protocol_table {
 	int size;
 };
 
-typedef void(*protocol_begin_func)(void* userdata, const char* name);
-typedef void(*protocol_over_func)(void* userdata);
-typedef void(*field_begin_func)(void* userdata,const char* field_type);
-typedef void(*field_over_func)(void* userdata, const char* field_name);
+typedef struct protocol* (*protocol_begin_func)(struct protocol_table* table, const char* name);
+typedef void(*protocol_over_func)(struct protocol_table* table);
+typedef void(*field_begin_func)(struct protocol* ptl,const char* field_type);
+typedef void(*field_over_func)(struct protocol* ptl, const char* field_name);
 
 struct parser {
 	char* c;
 	int offset;
 	int size;
 	int line;
-	struct protocol_table* table;
+	jmp_buf exception;
+	struct protocol* root;
 	protocol_begin_func protocol_begin;
 	protocol_over_func protocol_over;
 	field_begin_func field_begin;
 	field_begin_func field_over;
 };
 
-int strhash(const char *str)
+size_t strhash(const char *str)
 {
-	int hash = 0;
+	size_t hash = 0;
 	int ch;
 	for (long i = 0; ch = (int)*str++; i++)
 	{
@@ -81,7 +89,7 @@ struct protocol_table* create_table(int size)
 
 struct protocol* query_protocol(struct protocol_table* table, const char* name)
 {
-	int hash = strhash(name);
+	size_t hash = strhash(name);
 	int index = hash % table->size;
 	struct protocol* slot = table->slots[index];
 	if (slot != NULL)
@@ -126,7 +134,7 @@ void rehash_table(struct protocol_table* table, int nsize)
 
 void add_protocol(struct protocol_table* table, struct protocol* protocol)
 {
-	int hash = strhash(protocol->name);
+	size_t hash = strhash(protocol->name);
 	int index = hash % table->size;
 	struct protocol* slot = table->slots[index];
 	if (slot == NULL)
@@ -172,12 +180,24 @@ void add_field(struct protocol* protocol, struct field* f)
 	protocol->field[protocol->size++] = f;
 }
 
+struct field* create_field(char* field_type, char* field_name)
+{
+	struct field* f = (struct field*)malloc(sizeof(*f));
+	memset(f, 0, sizeof(*f));
+	f->name = field_name;
+	return f;
+}
+
 struct protocol* create_protocol(const char* name)
 {
+	int len = strlen(name);
 	struct protocol* ctx = (struct protocol*)malloc(sizeof(*ctx));
 	ctx->next = NULL;
-	ctx->name = name;
-	ctx->nest = create_table(4);
+	ctx->name = (char*)malloc(len + 1);
+	memcpy((void*)ctx->name, (void*)name, len);
+	ctx->name[len] = '\0';
+	ctx->parent = NULL;
+	ctx->children = create_table(4);
 	ctx->cap = 4;
 	ctx->size = 0;
 	ctx->field = (struct field**)malloc(sizeof(struct field*) * ctx->cap);
@@ -201,7 +221,7 @@ void parser_init(struct parser* parser, const char* file,void* ud, protocol_begi
 	parser->c[len] = 0;
 	fclose(file_handle);
 
-	parser->table = create_table(16);
+	parser->root = create_protocol("root");
 	parser->protocol_begin = ptl_begin;
 	parser->protocol_over = ptl_over;
 	parser->field_begin = field_begin;
@@ -284,62 +304,57 @@ static bool expect_space(struct parser* p, int offset)
 	return isspace(*(p->c + offset));
 }
 
-
-
 static const char* builtin_type[] = { "int","number", "string", "protocol"};
 
-void parser_run(struct parser* p)
+void parser_run(struct parser* p,struct protocol* parent)
 {
 	skip_space(p);
 	char name[65];
 	memset(name, 0, 65);
-	char* c = p->c;
+
 	int err = sscanf(p->c, "%64[1-9a-zA-Z]", name);
 	if (err == 0) {
 		fprintf(stderr, "line:%d syntax error", p->line);
-		return;
+		THROW(p);
 	}
 
-	int name_length = strlen(name);
-
-	if (memcmp(name, "protocol", name_length) == 0)
-	{
-		if (isspace(*(p->c + name_length)) == 0)
-		{
-			fprintf(stderr, "line:%d syntax error", p->line);
-			return;
-		}
-		next_token(p);
-		err = sscanf(p->c, "%64[1-9a-zA-Z]", name);
-		p->protocol_begin(p->table, name);
-
-		name_length = strlen(name);
-		if (!expect_space(p, name_length) && !expect(p,name_length,'{'))
-		{
-			fprintf(stderr, "line:%d syntax error", p->line);
-			return;
-		}
-		skip(p, name_length);
-	}
-	else
+	int len = strlen(name);
+	if (memcmp(name, "protocol", len) != 0)
 	{
 		fprintf(stderr, "line:%d syntax error", p->line);
-		return;
+		THROW(p);
 	}
+
+	next_token(p);
+
+	memset(name, 0, 65);
+	err = sscanf(p->c, "%64[1-9a-zA-Z_]", name);
+	struct protocol* ptl = p->protocol_begin(parent->children, name);
+	ptl->parent = parent;
+
+	len = strlen(name);
+	if (!expect_space(p, len) && !expect(p, len, '{'))
+	{
+		fprintf(stderr, "line:%d syntax error", p->line);
+		THROW(p);
+	}
+	skip(p, len);
 
 	skip_space(p);
 	if (!expect(p, 0, '{'))
 	{
 		fprintf(stderr, "line:%d syntax error", p->line);
-		return;
+		THROW(p);
 	}
 	while (!eos(p))
 	{
 		next_token(p);
+
+	__again:
 		if (expect(p, 0, '}'))
 		{
 			next_token(p);
-			p->protocol_over(p->table);
+			p->protocol_over(parent->children);
 			break;
 		}
 		memset(name, 0, 65);
@@ -347,7 +362,7 @@ void parser_run(struct parser* p)
 		if (err == 0)
 		{
 			fprintf(stderr, "line:%d syntax error", p->line);
-			return;
+			THROW(p);
 		}
 		int len = strlen(name);
 		bool success = false;
@@ -361,58 +376,81 @@ void parser_run(struct parser* p)
 		}
 		if (!success)
 		{
-			fprintf(stderr, "line:%d syntax error:unknown type:%s\n", p->line, name);
-			return;
+			struct protocol* protocol = query_protocol(parent->children, name);
+			if (protocol == NULL)
+			{
+				fprintf(stderr, "line:%d syntax error:unknown type:%s\n", p->line, name);
+				THROW(p);
+			}			
 		}
 
 		if (expect_space(p,len) == 0)
 		{
 			fprintf(stderr, "line:%d syntax error", p->line);
-			return;
+			THROW(p);
 		}
 
 		if (memcmp(name, "protocol", len) == 0)
 		{
-			parser_run(p);
-			continue;
+			parser_run(p, ptl);
+			if (expect_space(p, 0))
+				continue;
+			else
+				goto __again;
 		}
 		else
 		{
-			p->field_begin(p->table, name);
+			p->field_begin(ptl, name);
 		}
 
 		next_token(p);
 		memset(name, 0, 65);
-		err = sscanf(p->c, "%64s", name);
+		err = sscanf(p->c, "%64[1-9a-zA-Z_]", name);
 		if (err == 0)
 		{
 			fprintf(stderr, "line:%d syntax error", p->line);
-			return;
+			THROW(p);
 		}
 		len = strlen(name);
-		p->field_over(p->table, name);
+		p->field_over(ptl, name);
 	}
 	
 }
 
-void protobol_begin(void* userdata, const char* name)
+struct protocol* protobol_begin(struct protocol_table* table, const char* name)
 {
 	printf("protobol_begin:%s\n", name);
+	struct protocol* ptl = create_protocol(name);
+	add_protocol(table, ptl);
+	return ptl;
 }
 
-void protobol_over(void* userdata)
+void protobol_over(struct protocol_table* table)
 {
 	printf("protobol_over\n");
 }
 
-void field_begin(void* userdata, const char* field_type)
+void field_begin(struct protocol* ptl, const char* field_type)
 {
 	printf("field_begin:%s\n", field_type);
+	int len = strlen(field_type);
+	ptl->lastfield = (char*)malloc(len+1);
+	memcpy(ptl->lastfield, field_type, len);
+	ptl->lastfield[len] = '\0';
 }
 
-void field_over(void* userdata, const char* field_name)
+void field_over(struct protocol* ptl, const char* field_name)
 {
 	printf("field_over:%s\n", field_name);
+	int len = strlen(field_name);
+	char* fname = (char*)malloc(len + 1);
+	memcpy(fname, field_name, len);
+	fname[len] = '\0';
+
+	struct field* f = create_field(ptl->lastfield, fname);
+	add_field(ptl, f);
+
+	ptl->lastfield = NULL;
 }
 
 
@@ -420,9 +458,11 @@ int main()
 {
 	struct parser p;
 	parser_init(&p, "test.protocol", NULL, protobol_begin, protobol_over, field_begin, field_over);
-	while (!eos(&p))
-	{
-		parser_run(&p);
+	TRY(&p) {
+		while (!eos(&p))
+		{
+			parser_run(&p,p.root);
+		}
+		return 0;
 	}
-	
 }
