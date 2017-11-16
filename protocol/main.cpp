@@ -180,7 +180,7 @@ void add_field(struct protocol* protocol, struct field* f)
 	protocol->field[protocol->size++] = f;
 }
 
-struct field* create_field(char* field_type, char* field_name)
+struct field* create_field(struct protocol* ptl,char* field_type, char* field_name)
 {
 	struct field* f = (struct field*)malloc(sizeof(*f));
 	memset(f, 0, sizeof(*f));
@@ -447,7 +447,7 @@ void field_over(struct protocol* ptl, const char* field_name)
 	memcpy(fname, field_name, len);
 	fname[len] = '\0';
 
-	struct field* f = create_field(ptl->lastfield, fname);
+	struct field* f = create_field(ptl,ptl->lastfield, fname);
 	add_field(ptl, f);
 
 	ptl->lastfield = NULL;
