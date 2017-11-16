@@ -11,6 +11,13 @@ protocol test1
 	test_1 A
 	string B
 }
+
+protocol testdsf
+{
+	test_1 A
+	string B
+}
+
 protocol test2{
 	protocol InnerProtocol {
 		int ts_et

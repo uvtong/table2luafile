@@ -80,7 +80,7 @@ size_t strhash(const char *str)
 {
 	size_t hash = 0;
 	int ch;
-	for (long i = 0; ch = (int)*str++; i++)
+	for (long i = 0; ch = (size_t)*str++; i++)
 	{
 		if ((i & 1) == 0)
 			hash ^= ((hash << 7) ^ ch ^ (hash >> 3));
@@ -132,13 +132,21 @@ void rehash_table(struct protocol_table* table, int nsize)
 			int index = hash % nsize;
 			struct protocol* slot = nslots[index];
 			if (slot == NULL)
+			{
+				struct protocol* tmp = ptl->next;
+				ptl->next = NULL;
 				nslots[index] = ptl;
+				ptl = tmp;
+			}
 			else
 			{
+				struct protocol* tmp = ptl->next;
 				ptl->next = slot;
 				nslots[index] = ptl;
+				ptl = tmp;
+				continue;
 			}
-			ptl = ptl->next;
+			
 		}
 	}
 	free(table->slots);
@@ -404,9 +412,6 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 
 	memset(name, 0, 65);
 	err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
-	struct protocol* ptl = l->protocol_begin(parent->children, name);
-	ptl->parent = parent;
-
 	len = strlen(name);
 
 	//协议名不能超过64
@@ -415,6 +420,16 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 		fprintf(stderr, "line:%d syntax error:protocol name:%s too long", l->line,name);
 		THROW(l);
 	}
+
+	struct protocol* optl = query_protocol(parent->children,name);
+	if (optl) {
+		fprintf(stderr, "line:%d syntax error:protocol name:%s already define\n", l->line,name);
+		THROW(l);
+	}
+
+	struct protocol* ptl = l->protocol_begin(parent->children, name);
+	ptl->parent = parent;
+
 	//跳过协议名
 	skip(l, len);
 
@@ -458,16 +473,26 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 			THROW(l);
 		}
 		int len = strlen(name);
-		bool success = false;
+
+		if (memcmp(name, "protocol", len) == 0)
+		{
+			lexer_parse(l, ptl);
+			if (expect_space(l, 0))
+				continue;
+			else
+				goto __again;
+		}
+
+		bool builtin = false;
 		for (int i = 0; i < sizeof(builtin_type) / sizeof(void*); i++)
 		{
 			if (memcmp(name, builtin_type[i], len) == 0)
 			{
-				success = true;
+				builtin = true;
 				break;
 			}
 		}
-		if (!success)
+		if (!builtin)
 		{
 			struct protocol* protocol = query_protocol(parent->children, name);
 			if (protocol == NULL)
@@ -483,19 +508,8 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 			THROW(l);
 		}
 
-		if (memcmp(name, "protocol", len) == 0)
-		{
-			lexer_parse(l, ptl);
-			if (expect_space(l, 0))
-				continue;
-			else
-				goto __again;
-		}
-		else
-		{
-			l->field_begin(ptl, name);
-		}
-
+		l->field_begin(ptl, name);
+		
 		next_token(l);
 		memset(name, 0, 65);
 		err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
