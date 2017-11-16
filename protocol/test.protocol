@@ -17,8 +17,8 @@ protocol test1
 
 protocol testdsf
 {
-	test_1 A
-	string B
+	test_1 A string
+	string string
 }
 
 protocol test2{
@@ -37,7 +37,7 @@ protocol Info
 
 protocol IncludeOther
 {
-	Message messageInfo
+	Message[] messageInfo
 }
 
 #每个词长度不能超过64

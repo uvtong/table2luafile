@@ -522,7 +522,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 	//协议名不能超过64
 	if (!expect_space(l, len) && !expect(l, len, '{'))
 	{
-		fprintf(stderr, "file:%s@line:%d syntax error:protocol name:%s too long", l->file, l->line, name);
+		fprintf(stderr, "file:%s@line:%d syntax error:protocol name:%s too long\n", l->file, l->line, name);
 		THROW(l);
 	}
 
@@ -544,14 +544,14 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 	//协议名后有>=0个空格，空格之后必须是{
 	if (!expect(l, 0, '{'))
 	{
-		fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
+		fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
 		THROW(l);
 	}
 
 	//{之后必有空格
 	if (!expect_space(l, 1))
 	{
-		fprintf(stderr, "file:%s@line:%d syntax error:expect space", l->file, l->line);
+		fprintf(stderr, "file:%s@line:%d syntax error:expect space\n", l->file, l->line);
 		THROW(l);
 	}
 	while (!eos(l,0))
@@ -563,7 +563,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		{
 			if (!eos(l,1) && !expect_space(l, 1))
 			{
-				fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
+				fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
 				THROW(l);
 			}
 			l->protocol_over(parent->children);
@@ -574,7 +574,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		err = sscanf(l->c, "%64s", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 		int len = strlen(name);
@@ -609,7 +609,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 
 		if (expect_space(l,len) == 0)
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 
@@ -620,7 +620,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 		len = strlen(name);
@@ -629,7 +629,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		//每一个字段名之后，必有空格
 		if (!expect_space(l, len))
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error:expect space",l->file, l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error:expect space\n",l->file, l->line);
 			THROW(l);
 		}
 	}
@@ -643,7 +643,7 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 
 	int err = sscanf(l->c, "%64[1-9a-zA-Z]", name);
 	if (err == 0) {
-		fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
+		fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
 		THROW(l);
 	}
 
@@ -668,7 +668,7 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 		}
 		err = sscanf(l->c, "\"%64[^\"]\"", name);
 		if (err == 0) {
-			fprintf(stderr, "file:%s@line:%d syntax error", l->file, l->line);
+			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 
@@ -684,7 +684,7 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 		}
 		return;
 	}
-	fprintf(stderr, "file:%s@line:%d syntax error:unknown %s", l->file, l->line, name);
+	fprintf(stderr, "file:%s@line:%d syntax error:unknown %s\n", l->file, l->line, name);
 	THROW(l);
 }
 
