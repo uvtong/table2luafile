@@ -264,9 +264,9 @@ void parser_init(struct parser* parser, const char* file,void* ud, protocol_begi
 	parser->field_over = field_over;
 }
 
-static int eos(struct parser *p)
+static int eos(struct parser *p,int n)
 {
-	if (*(p->c) == 0)
+	if (*(p->c + n) == 0)
 		return 1;
 	else
 		return 0;
@@ -321,7 +321,7 @@ static void skip(struct parser* p, int size)
 {
 	char *n = p->c;
 	int index = 0;
-	while (!eos(p) && index < size)
+	while (!eos(p,0) && index < size)
 	{
 		n++;
 		index++;
@@ -386,7 +386,7 @@ void parser_run(struct parser* p,struct protocol* parent)
 		fprintf(stderr, "line:%d syntax error", p->line);
 		THROW(p);
 	}
-	while (!eos(p))
+	while (!eos(p,0))
 	{
 		/*	skip(p, 1);
 			skip_space(p);*/
@@ -395,6 +395,11 @@ void parser_run(struct parser* p,struct protocol* parent)
 	__again:
 		if (expect(p, 0, '}'))
 		{
+			if (!eos(p,1) && !expect_space(p, 1))
+			{
+				fprintf(stderr, "line:%d syntax error", p->line);
+				THROW(p);
+			}
 			next_token(p);
 			p->protocol_over(parent->children);
 			break;
@@ -507,7 +512,7 @@ int main()
 	struct parser p;
 	parser_init(&p, "test.protocol", NULL, protobol_begin, protobol_over, field_begin, field_over);
 	TRY(&p) {
-		while (!eos(&p))
+		while (!eos(&p,0))
 		{
 			parser_run(&p,p.root);
 		}
