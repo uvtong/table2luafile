@@ -383,7 +383,7 @@ void parser_run(struct parser* p,struct protocol* parent)
 
 	if (!expect_space(p, 1))
 	{
-		fprintf(stderr, "line:%d syntax error", p->line);
+		fprintf(stderr, "line:%d syntax error:expect space", p->line);
 		THROW(p);
 	}
 	while (!eos(p,0))
@@ -463,7 +463,7 @@ void parser_run(struct parser* p,struct protocol* parent)
 		
 		if (!expect_space(p, len))
 		{
-			fprintf(stderr, "line:%d syntax error", p->line);
+			fprintf(stderr, "line:%d syntax error:expect space", p->line);
 			THROW(p);
 		}
 	}
