@@ -11,8 +11,8 @@ extern "C" {
 #include "lauxlib.h"
 }
 
-#define TRY(p) if (setjmp((p)->exception) == 0)
-#define THROW(p) longjmp((p)->exception, 1)
+#define TRY(l) if (setjmp((l)->exception) == 0)
+#define THROW(l) longjmp((l)->exception, 1)
 
 #define TYPE_INT		0
 #define TYPE_NUMBER		1
@@ -56,7 +56,7 @@ typedef void(*protocol_over_func)(struct protocol_table* table);
 typedef void(*field_begin_func)(struct protocol* ptl,const char* field_type);
 typedef void(*field_over_func)(struct protocol* ptl, const char* field_name);
 
-struct parser {
+struct lexer {
 	char* c;
 	int offset;
 	int size;
@@ -242,7 +242,7 @@ struct protocol* create_protocol(const char* name)
 	return ctx;
 }
 
-void parser_init(struct parser* parser, const char* file,void* ud, protocol_begin_func ptl_begin, protocol_over_func ptl_over, field_begin_func field_begin, field_over_func field_over)
+void lexer_init(struct lexer* parser, const char* file, void* ud, protocol_begin_func ptl_begin, protocol_over_func ptl_over, field_begin_func field_begin, field_over_func field_over)
 {
 	FILE *file_handle = fopen(file, "r");
 	fseek(file_handle, 0, SEEK_END);
@@ -264,152 +264,157 @@ void parser_init(struct parser* parser, const char* file,void* ud, protocol_begi
 	parser->field_over = field_over;
 }
 
-static int eos(struct parser *p,int n)
+static int eos(struct lexer *l, int n)
 {
-	if (*(p->c + n) == 0)
+	if (*(l->c + n) == 0)
 		return 1;
 	else
 		return 0;
 }
 
-static void skip_space(struct parser *p);
+static void skip_space(struct lexer *l);
 
-static void next_line(struct parser *p)
+static void next_line(struct lexer *l)
 {
-	char *n = p->c;
+	char *n = l->c;
 	while (*n != '\n' && *n)
 		n++;
 	if (*n == '\n')
 		n++;
-	p->line++;
-	p->c = n;
-	skip_space(p);
+	l->line++;
+	l->c = n;
+	skip_space(l);
 
 	return;
 }
 
-static void skip_space(struct parser *p)
+static void skip_space(struct lexer *l)
 {
-	char *n = p->c;
+	char *n = l->c;
 	while (isspace(*n) && *n) {
 		if (*n == '\n')
-			p->line++;
+			l->line++;
 		n++;
 	}
 
-	p->c = n;
+	l->c = n;
 	if (*n == '#' && *n)
-		next_line(p);
+		next_line(l);
 
 	return;
 }
 
-static void next_token(struct parser *p)
+static void next_token(struct lexer *l)
 {
 	char *n;
-	skip_space(p);
-	n = p->c;
+	skip_space(l);
+	n = l->c;
 	while (!isspace(*n) && *n)
 		n++;
-	p->c = n;
-	skip_space(p);
+	l->c = n;
+	skip_space(l);
 
 	return;
 }
 
-static void skip(struct parser* p, int size)
+static void skip(struct lexer* l, int size)
 {
-	char *n = p->c;
+	char *n = l->c;
 	int index = 0;
-	while (!eos(p,0) && index < size)
+	while (!eos(l,0) && index < size)
 	{
 		n++;
 		index++;
 	}
 		
-	p->c = n;
+	l->c = n;
 }
 
-static bool expect(struct parser* p,int offset,char c)
+static bool expect(struct lexer* l, int offset, char c)
 {
-	return *(p->c + offset) == c;
+	return *(l->c + offset) == c;
 }
 
-static bool expect_space(struct parser* p, int offset)
+static bool expect_space(struct lexer* l, int offset)
 {
-	return isspace(*(p->c + offset));
+	return isspace(*(l->c + offset));
 }
 
-void parser_run(struct parser* p,struct protocol* parent)
+void lexer_parse(struct lexer* l, struct protocol* parent)
 {
-	skip_space(p);
+	skip_space(l);
 	char name[65];
 	memset(name, 0, 65);
 
-	int err = sscanf(p->c, "%64[1-9a-zA-Z]", name);
+	int err = sscanf(l->c, "%64[1-9a-zA-Z]", name);
 	if (err == 0) {
-		fprintf(stderr, "line:%d syntax error", p->line);
-		THROW(p);
+		fprintf(stderr, "line:%d syntax error", l->line);
+		THROW(l);
 	}
 
 	int len = strlen(name);
 	if (memcmp(name, "protocol", len) != 0)
 	{
-		fprintf(stderr, "line:%d syntax error:expect protocol", p->line);
-		THROW(p);
+		fprintf(stderr, "line:%d syntax error:expect protocol", l->line);
+		THROW(l);
 	}
 
-	next_token(p);
+	next_token(l);
 
 	memset(name, 0, 65);
-	err = sscanf(p->c, "%64[1-9a-zA-Z_]", name);
-	struct protocol* ptl = p->protocol_begin(parent->children, name);
+	err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
+	struct protocol* ptl = l->protocol_begin(parent->children, name);
 	ptl->parent = parent;
 
 	len = strlen(name);
-	if (!expect_space(p, len) && !expect(p, len, '{'))
-	{
-		fprintf(stderr, "line:%d syntax error:protocol name:%s too long", p->line,name);
-		THROW(p);
-	}
-	skip(p, len);
 
-	skip_space(p);
-	if (!expect(p, 0, '{'))
+	//协议名不能超过64
+	if (!expect_space(l, len) && !expect(l, len, '{'))
 	{
-		fprintf(stderr, "line:%d syntax error", p->line);
-		THROW(p);
+		fprintf(stderr, "line:%d syntax error:protocol name:%s too long", l->line,name);
+		THROW(l);
+	}
+	//跳过协议名
+	skip(l, len);
+
+	//跳过空格
+	skip_space(l);
+
+	//协议名后有>=0个空格，空格之后必须是{
+	if (!expect(l, 0, '{'))
+	{
+		fprintf(stderr, "line:%d syntax error", l->line);
+		THROW(l);
 	}
 
-	if (!expect_space(p, 1))
+	//{之后必有空格
+	if (!expect_space(l, 1))
 	{
-		fprintf(stderr, "line:%d syntax error:expect space", p->line);
-		THROW(p);
+		fprintf(stderr, "line:%d syntax error:expect space", l->line);
+		THROW(l);
 	}
-	while (!eos(p,0))
+	while (!eos(l,0))
 	{
-		/*	skip(p, 1);
-			skip_space(p);*/
-		next_token(p);
+		next_token(l);
 
 	__again:
-		if (expect(p, 0, '}'))
+		if (expect(l, 0, '}'))
 		{
-			if (!eos(p,1) && !expect_space(p, 1))
+			if (!eos(l,1) && !expect_space(l, 1))
 			{
-				fprintf(stderr, "line:%d syntax error", p->line);
-				THROW(p);
+				fprintf(stderr, "line:%d syntax error", l->line);
+				THROW(l);
 			}
-			next_token(p);
-			p->protocol_over(parent->children);
+			l->protocol_over(parent->children);
+			next_token(l);
 			break;
 		}
 		memset(name, 0, 65);
-		err = sscanf(p->c, "%64s", name);
+		err = sscanf(l->c, "%64s", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "line:%d syntax error", p->line);
-			THROW(p);
+			fprintf(stderr, "line:%d syntax error", l->line);
+			THROW(l);
 		}
 		int len = strlen(name);
 		bool success = false;
@@ -426,45 +431,46 @@ void parser_run(struct parser* p,struct protocol* parent)
 			struct protocol* protocol = query_protocol(parent->children, name);
 			if (protocol == NULL)
 			{
-				fprintf(stderr, "line:%d syntax error:unknown type:%s\n", p->line, name);
-				THROW(p);
+				fprintf(stderr, "line:%d syntax error:unknown type:%s\n", l->line, name);
+				THROW(l);
 			}			
 		}
 
-		if (expect_space(p,len) == 0)
+		if (expect_space(l,len) == 0)
 		{
-			fprintf(stderr, "line:%d syntax error", p->line);
-			THROW(p);
+			fprintf(stderr, "line:%d syntax error", l->line);
+			THROW(l);
 		}
 
 		if (memcmp(name, "protocol", len) == 0)
 		{
-			parser_run(p, ptl);
-			if (expect_space(p, 0))
+			lexer_parse(l, ptl);
+			if (expect_space(l, 0))
 				continue;
 			else
 				goto __again;
 		}
 		else
 		{
-			p->field_begin(ptl, name);
+			l->field_begin(ptl, name);
 		}
 
-		next_token(p);
+		next_token(l);
 		memset(name, 0, 65);
-		err = sscanf(p->c, "%64[1-9a-zA-Z_]", name);
+		err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "line:%d syntax error", p->line);
-			THROW(p);
+			fprintf(stderr, "line:%d syntax error", l->line);
+			THROW(l);
 		}
 		len = strlen(name);
-		p->field_over(ptl, name);
+		l->field_over(ptl, name);
 		
-		if (!expect_space(p, len))
+		//每一个字段名之后，必有空格
+		if (!expect_space(l, len))
 		{
-			fprintf(stderr, "line:%d syntax error:expect space", p->line);
-			THROW(p);
+			fprintf(stderr, "line:%d syntax error:expect space", l->line);
+			THROW(l);
 		}
 	}
 	
@@ -509,12 +515,12 @@ void field_over(struct protocol* ptl, const char* field_name)
 
 int main()
 {
-	struct parser p;
-	parser_init(&p, "test.protocol", NULL, protobol_begin, protobol_over, field_begin, field_over);
-	TRY(&p) {
-		while (!eos(&p,0))
+	struct lexer l;
+	lexer_init(&l, "test.protocol", NULL, protobol_begin, protobol_over, field_begin, field_over);
+	TRY(&l) {
+		while (!eos(&l,0))
 		{
-			parser_run(&p,p.root);
+			lexer_parse(&l, l.root);
 		}
 		return 0;
 	}
