@@ -15,11 +15,12 @@ extern "C" {
 #define THROW(l) longjmp((l)->exception, 1)
 
 #define TYPE_INT		0
-#define TYPE_NUMBER		1
-#define TYPE_STRING		2
-#define TYPE_PROTOCOL	3
+#define TYPE_FLOAT		1
+#define TYPE_DOUBLE		2
+#define TYPE_STRING		3
+#define TYPE_PROTOCOL	4
 
-static const char* builtin_type[] = { "int", "number", "string", "protocol" };
+static const char* builtin_type[] = { "int", "float", "double", "string", "protocol" };
 
 struct field_type {
 	int type;
@@ -28,6 +29,7 @@ struct field_type {
 
 struct field {
 	char* name;
+	int is_array;
 	struct field_type field_type;
 };
 
@@ -63,6 +65,7 @@ struct lexer {
 	int line;
 	jmp_buf exception;
 	struct protocol* root;
+
 	protocol_begin_func protocol_begin;
 	protocol_over_func protocol_over;
 	field_begin_func field_begin;
@@ -121,7 +124,7 @@ void rehash_table(struct protocol_table* table, int nsize)
 		struct protocol* ptl = table->slots[i];
 		while (ptl) 
 		{
-			int hash = strhash(ptl->name);
+			size_t hash = strhash(ptl->name);
 			int index = hash % nsize;
 			struct protocol* slot = nslots[index];
 			if (slot == NULL)
@@ -242,6 +245,33 @@ struct protocol* create_protocol(const char* name)
 	return ctx;
 }
 
+void dump_protocol(struct protocol* root,int depth)
+{
+	for (int i = 0; i < depth; ++i)
+		printf("\t");
+
+	printf("protocol:%s\n",root->name);
+	depth++;
+	struct protocol_table* table = root->children;
+	for (int i = 0; i < table->size; i++) 
+	{
+		struct protocol* ptl = table->slots[i];
+		while (ptl) 
+		{
+			dump_protocol(ptl,depth);
+			ptl = ptl->next;
+		}
+	}
+
+	for (int i = 0; i < root->size; ++i)
+	{
+		struct field* f = root->field[i];
+		for (int i = 0; i < depth; ++i)
+		printf("\t");
+		printf("field type:%d,name:%s\n",f->field_type.type,f->name);
+	}
+}
+
 void lexer_init(struct lexer* parser, const char* file, void* ud, protocol_begin_func ptl_begin, protocol_over_func ptl_over, field_begin_func field_begin, field_over_func field_over)
 {
 	FILE *file_handle = fopen(file, "r");
@@ -257,7 +287,7 @@ void lexer_init(struct lexer* parser, const char* file, void* ud, protocol_begin
 	parser->c[len] = 0;
 	fclose(file_handle);
 
-	parser->root = create_protocol("root");
+	parser->root = create_protocol(file);
 	parser->protocol_begin = ptl_begin;
 	parser->protocol_over = ptl_over;
 	parser->field_begin = field_begin;
@@ -522,6 +552,7 @@ int main()
 		{
 			lexer_parse(&l, l.root);
 		}
-		return 0;
 	}
+
+	dump_protocol(l.root,0);
 }

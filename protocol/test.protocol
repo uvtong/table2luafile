@@ -1,0 +1,29 @@
+
+
+#222222222222
+#
+protocol test_1{
+int A
+	string B	}
+
+protocol test1
+{
+	test_1 A
+	string B
+}
+protocol test2{
+	protocol InnerProtocol {
+		int ts_et
+		float ddd
+	}
+	double A_B
+	string B
+}
+
+protocol Info
+{
+	#Item Reward
+}
+
+#每个词长度不能超过64
+#{之后必有空格，}之前必有空格，之后必有空格
