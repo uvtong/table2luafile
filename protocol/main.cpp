@@ -29,6 +29,7 @@ static const char* builtin_type[] = { "int", "int[]", "float", "float[]", "doubl
 
 struct field_type {
 	int type;
+	int isarray;
 	struct protocol* protocol;
 };
 
@@ -231,7 +232,8 @@ struct field* create_field(struct protocol* ptl,char* field_type, char* field_na
 	f->name = field_name;
 	f->field_type.type = ftype;
 	f->field_type.protocol = NULL;
-
+	f->field_type.isarray = 0;
+	
 	if (ftype == TYPE_PROTOCOL)
 	{	
 		struct protocol* cursor = ptl;
@@ -246,6 +248,16 @@ struct field* create_field(struct protocol* ptl,char* field_type, char* field_na
 			cursor = cursor->parent;
 		}
 		assert(f->field_type.protocol != NULL);
+	}
+	else 
+	{
+		if (ftype == TYPE_INT_ARRAY ||
+			ftype == TYPE_FLOAT_ARRAY || 
+			ftype == TYPE_DOUBLE_ARRAY ||
+			ftype == TYPE_STRING_ARRAY )
+		{
+			f->field_type.isarray = 1;
+		}
 	}
 
 	return f;
