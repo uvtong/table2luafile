@@ -23,9 +23,9 @@ extern "C" {
 #define TYPE_STRING				6
 #define TYPE_STRING_ARRAY		7
 #define TYPE_PROTOCOL			8
-#define TYPE_PROTOCOL_ARRAY		9
 
-static const char* builtin_type[] = { "int", "int[]", "float", "float[]", "double", "double[]", "string", "string[]", "protocol", "protocol" };
+
+static const char* builtin_type[] = { "int", "int[]", "float", "float[]", "double", "double[]", "string", "string[]"};
 
 struct field_type {
 	int type;
@@ -294,7 +294,7 @@ void dump_protocol(struct protocol* root,int depth)
 			printf("\t");
 
 		printf("field type:%d,",f->field_type.type);
-		if (f->field_type.type == TYPE_PROTOCOL || f->field_type.type == TYPE_PROTOCOL_ARRAY) {
+		if (f->field_type.type == TYPE_PROTOCOL) {
 			printf("type name:%s,",f->field_type.protocol->name);
 		} else {
 			printf("type name:%s,",builtin_type[f->field_type.type]);
