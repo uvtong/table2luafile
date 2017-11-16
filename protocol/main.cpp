@@ -496,10 +496,11 @@ void lexer_parse(struct lexer* l, struct protocol* parent);
 
 void import_protocol(struct lexer* l,char* name)
 {
-	struct lexer import_lexer;
 	char file[64];
-	memset(file,0,64);
-	sprintf(file,"%s.protocol",name);
+	memset(file, 0, 64);
+	sprintf(file, "%s.protocol", name);
+
+	struct lexer import_lexer;
 	lexer_init(&import_lexer, l->main->root, protobol_begin, protobol_over, field_begin, field_over);
 	import_lexer.main = l->main;
 	if (lexer_parse_file(&import_lexer, file) < 0)
