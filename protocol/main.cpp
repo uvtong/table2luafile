@@ -14,13 +14,18 @@ extern "C" {
 #define TRY(l) if (setjmp((l)->exception) == 0)
 #define THROW(l) longjmp((l)->exception, 1)
 
-#define TYPE_INT		0
-#define TYPE_FLOAT		1
-#define TYPE_DOUBLE		2
-#define TYPE_STRING		3
-#define TYPE_PROTOCOL	4
+#define TYPE_INT				0
+#define TYPE_INT_ARRAY			1
+#define TYPE_FLOAT				2
+#define TYPE_FLOAT_ARRAY		3
+#define TYPE_DOUBLE				4
+#define TYPE_DOUBLE_ARRAY		5
+#define TYPE_STRING				6
+#define TYPE_STRING_ARRAY		7
+#define TYPE_PROTOCOL			8
+#define TYPE_PROTOCOL_ARRAY		9
 
-static const char* builtin_type[] = { "int", "float", "double", "string", "protocol" };
+static const char* builtin_type[] = { "int", "int[]", "float", "float[]", "double", "double[]", "string", "string[]", "protocol", "protocol" };
 
 struct field_type {
 	int type;
@@ -29,7 +34,6 @@ struct field_type {
 
 struct field {
 	char* name;
-	int is_array;
 	struct field_type field_type;
 };
 

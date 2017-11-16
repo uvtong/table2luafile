@@ -3,7 +3,7 @@
 #222222222222
 #
 protocol test_1{
-int A
+int[] A
 	string B	}
 
 protocol test1
