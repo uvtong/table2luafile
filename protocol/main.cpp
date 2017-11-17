@@ -62,13 +62,20 @@ struct protocol_table {
 typedef struct protocol* (*protocol_begin_func)(struct protocol_table* table,const char* file, const char* name);
 typedef void(*protocol_over_func)(struct protocol_table* table);
 typedef void(*field_begin_func)(struct protocol* ptl,const char* field_type);
-typedef void(*field_over_func)(struct protocol* ptl, const char* field_name);
+typedef void(*field_over_func)(struct protocol* ptl,int isarray, const char* field_name);
 
 
 struct file_hash {
 	char** name;
 	int offset;
 	int size;
+};
+
+struct lexer_cb {
+	protocol_begin_func protocol_begin;
+	protocol_over_func protocol_over;
+	field_begin_func field_begin;
+	field_over_func field_over;
 };
 
 struct lexer {
@@ -83,10 +90,7 @@ struct lexer {
 
 	struct file_hash file_hash;
 
-	protocol_begin_func protocol_begin;
-	protocol_over_func protocol_over;
-	field_begin_func field_begin;
-	field_begin_func field_over;
+	struct lexer_cb cb;
 };
 
 
@@ -216,7 +220,7 @@ void add_field(struct protocol* protocol, struct field* f)
 	protocol->field[protocol->size++] = f;
 }
 
-struct field* create_field(struct protocol* ptl,char* field_type, char* field_name)
+struct field* create_field(struct protocol* ptl,int isarray,char* field_type, char* field_name)
 {
 	int ftype = TYPE_PROTOCOL;
 	for (int i = 0; i < sizeof(builtin_type) / sizeof(void*); i++)
@@ -233,7 +237,7 @@ struct field* create_field(struct protocol* ptl,char* field_type, char* field_na
 	f->name = field_name;
 	f->field_type.type = ftype;
 	f->field_type.protocol = NULL;
-	f->field_type.isarray = 0;
+	f->field_type.isarray = isarray;
 	
 	if (ftype == TYPE_PROTOCOL)
 	{	
@@ -249,16 +253,6 @@ struct field* create_field(struct protocol* ptl,char* field_type, char* field_na
 			cursor = cursor->parent;
 		}
 		assert(f->field_type.protocol != NULL);
-	}
-	else 
-	{
-		if (ftype == TYPE_INT_ARRAY ||
-			ftype == TYPE_FLOAT_ARRAY || 
-			ftype == TYPE_DOUBLE_ARRAY ||
-			ftype == TYPE_STRING_ARRAY )
-		{
-			f->field_type.isarray = 1;
-		}
 	}
 
 	return f;
@@ -293,7 +287,7 @@ void dump_protocol(struct protocol* root,int depth)
 	for (int i = 0; i < depth; ++i)
 		printf("\t");
 
-	printf("protocol:%s\n",root->name);
+	printf("%s@%s\n",root->file,root->name);
 	depth++;
 	struct protocol_table* table = root->children;
 	for (int i = 0; i < table->size; i++) 
@@ -312,7 +306,7 @@ void dump_protocol(struct protocol* root,int depth)
 		for (int i = 0; i < depth; ++i)
 			printf("\t");
 
-		printf("field type:%d,",f->field_type.type);
+		printf("field type:%d,array:%d,",f->field_type.type,f->field_type.isarray);
 		if (f->field_type.type == TYPE_PROTOCOL) {
 			printf("type name:%s,",f->field_type.protocol->name);
 		} else {
@@ -333,10 +327,10 @@ void lexer_init(struct lexer* l, struct protocol* root, protocol_begin_func ptl_
 	l->file_hash.name = (char**)malloc(sizeof(char*)* l->file_hash.size);
 	memset(l->file_hash.name, 0, sizeof(char*)* l->file_hash.size);
 
-	l->protocol_begin = ptl_begin;
-	l->protocol_over = ptl_over;
-	l->field_begin = field_begin;
-	l->field_over = field_over;
+	l->cb.protocol_begin = ptl_begin;
+	l->cb.protocol_over = ptl_over;
+	l->cb.field_begin = field_begin;
+	l->cb.field_over = field_over;
 }
 
 bool exist_file(struct lexer* l, char* file)
@@ -477,7 +471,7 @@ int lexer_parse_file(struct lexer* l, const char* file)
 
 struct protocol* protobol_begin(struct protocol_table* table,const char* file, const char* name)
 {
-	printf("protobol_begin:%s\n", name);
+	//printf("protobol_begin:%s\n", name);
 	struct protocol* ptl = create_protocol(file,name);
 	add_protocol(table, ptl);
 	return ptl;
@@ -485,27 +479,27 @@ struct protocol* protobol_begin(struct protocol_table* table,const char* file, c
 
 void protobol_over(struct protocol_table* table)
 {
-	printf("protobol_over\n");
+	//printf("protobol_over\n");
 }
 
 void field_begin(struct protocol* ptl, const char* field_type)
 {
-	printf("field_begin:%s\n", field_type);
+	//printf("field_begin:%s\n", field_type);
 	int len = strlen(field_type);
 	ptl->lastfield = (char*)malloc(len + 1);
 	memcpy(ptl->lastfield, field_type, len);
 	ptl->lastfield[len] = '\0';
 }
 
-void field_over(struct protocol* ptl, const char* field_name)
+void field_over(struct protocol* ptl,int isarray, const char* field_name)
 {
-	printf("field_over:%s\n", field_name);
+	//printf("field_over:%s\n", field_name);
 	int len = strlen(field_name);
 	char* fname = (char*)malloc(len + 1);
 	memcpy(fname, field_name, len);
 	fname[len] = '\0';
 
-	struct field* f = create_field(ptl, ptl->lastfield, fname);
+	struct field* f = create_field(ptl,isarray, ptl->lastfield, fname);
 	add_field(ptl, f);
 
 	ptl->lastfield = NULL;
@@ -551,7 +545,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		THROW(l);
 	}
 
-	struct protocol* ptl = l->protocol_begin(parent->children,l->file, name);
+	struct protocol* ptl = l->cb.protocol_begin(parent->children, l->file, name);
 	ptl->parent = parent;
 
 	//跳过协议名
@@ -585,7 +579,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 				fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 				THROW(l);
 			}
-			l->protocol_over(parent->children);
+			l->cb.protocol_over(parent->children);
 			next_token(l);
 			break;
 		}
@@ -607,23 +601,43 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 				goto __again;
 		}
 
+		int isarray = 0;
 		bool builtin = false;
 		for (int i = 0; i < sizeof(builtin_type) / sizeof(void*); i++)
 		{
 			if (memcmp(name, builtin_type[i], len) == 0)
 			{
 				builtin = true;
+				if (i%2 == 1)
+					isarray = 1;
 				break;
 			}
 		}
+
+		
 		if (!builtin)
 		{
-			struct protocol* protocol = query_protocol(parent->children, name);
+			char tmp[65];
+			memset(tmp, 0, 65);
+			err = sscanf(name, "%64[0-9a-zA-Z_]", tmp);
+			if (err == 0)
+			{
+				fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
+				THROW(l);
+			}
+
+			if (expect(l, strlen(tmp), '[') && expect(l, strlen(tmp)+1, ']'))
+			{
+				isarray = 1;
+			}
+			struct protocol* protocol = query_protocol(parent->children, tmp);
 			if (protocol == NULL)
 			{
-				fprintf(stderr, "%s@line:%d syntax error:unknown type:%s\n", l->file, l->line, name);
+				fprintf(stderr, "%s@line:%d syntax error:unknown type:%s\n", l->file, l->line, tmp);
 				THROW(l);
-			}			
+			}
+			memcpy(name, tmp, strlen(tmp));
+			name[strlen(tmp)] = '\0';
 		}
 
 		if (expect_space(l,len) == 0)
@@ -632,7 +646,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 			THROW(l);
 		}
 
-		l->field_begin(ptl, name);
+		l->cb.field_begin(ptl, name);
 		
 		next_token(l);
 		memset(name, 0, 65);
@@ -643,7 +657,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 			THROW(l);
 		}
 		len = strlen(name);
-		l->field_over(ptl, name);
+		l->cb.field_over(ptl, isarray, name);
 		
 		//每一个字段名之后，必有空格
 		if (!expect_space(l, len))

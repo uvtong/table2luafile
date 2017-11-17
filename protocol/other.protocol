@@ -2,13 +2,8 @@
 
 
 protocol Message {
-	int id
+	int[] id
 	string name
 
 }
 
-protocol test1
-{
-	int A
-	string B
-}
