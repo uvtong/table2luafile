@@ -6,3 +6,9 @@ protocol Message {
 	string name
 
 }
+
+protocol test1
+{
+	int A
+	string B
+}

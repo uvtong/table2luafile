@@ -45,6 +45,7 @@ struct protocol {
 	struct protocol* parent;
 	struct protocol_table* children;
 
+	char* file;
 	char* name;
 	struct field** field;
 	int cap;
@@ -58,7 +59,7 @@ struct protocol_table {
 	int size;
 };
 
-typedef struct protocol* (*protocol_begin_func)(struct protocol_table* table, const char* name);
+typedef struct protocol* (*protocol_begin_func)(struct protocol_table* table,const char* file, const char* name);
 typedef void(*protocol_over_func)(struct protocol_table* table);
 typedef void(*field_begin_func)(struct protocol* ptl,const char* field_type);
 typedef void(*field_over_func)(struct protocol* ptl, const char* field_name);
@@ -263,7 +264,7 @@ struct field* create_field(struct protocol* ptl,char* field_type, char* field_na
 	return f;
 }
 
-struct protocol* create_protocol(const char* name)
+struct protocol* create_protocol(const char* file,const char* name)
 {
 	int len = strlen(name);
 	struct protocol* ctx = (struct protocol*)malloc(sizeof(*ctx));
@@ -271,6 +272,12 @@ struct protocol* create_protocol(const char* name)
 	ctx->name = (char*)malloc(len + 1);
 	memcpy((void*)ctx->name, (void*)name, len);
 	ctx->name[len] = '\0';
+
+	len = strlen(file);
+	ctx->file = (char*)malloc(len + 1);
+	memcpy((void*)ctx->file, (void*)file, len);
+	ctx->file[len] = '\0';
+
 	ctx->parent = NULL;
 	ctx->children = create_table(4);
 	ctx->cap = 4;
@@ -320,7 +327,7 @@ void lexer_init(struct lexer* l, struct protocol* root, protocol_begin_func ptl_
 	if (root)
 		l->root = root;
 	else
-		l->root = create_protocol("root");
+		l->root = create_protocol("root","root");
 	l->file_hash.offset = 0;
 	l->file_hash.size = 16;
 	l->file_hash.name = (char**)malloc(sizeof(char*)* l->file_hash.size);
@@ -468,10 +475,10 @@ int lexer_parse_file(struct lexer* l, const char* file)
 	return -1;
 }
 
-struct protocol* protobol_begin(struct protocol_table* table, const char* name)
+struct protocol* protobol_begin(struct protocol_table* table,const char* file, const char* name)
 {
 	printf("protobol_begin:%s\n", name);
-	struct protocol* ptl = create_protocol(name);
+	struct protocol* ptl = create_protocol(file,name);
 	add_protocol(table, ptl);
 	return ptl;
 }
@@ -534,17 +541,17 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 	//协议名不能超过64
 	if (!expect_space(l, len) && !expect(l, len, '{'))
 	{
-		fprintf(stderr, "file:%s@line:%d syntax error:protocol name:%s too long\n", l->file, l->line, name);
+		fprintf(stderr, "%s@line:%d syntax error:protocol name:%s too long\n", l->file, l->line, name);
 		THROW(l);
 	}
 
 	struct protocol* optl = query_protocol(parent->children,name);
 	if (optl) {
-		fprintf(stderr, "file:%s@line:%d syntax error:protocol name:%s already define\n", l->file, l->line, name);
+		fprintf(stderr, "%s@line:%d syntax error:protocol name:%s already define in file:%s\n", l->file, l->line, name,optl->file);
 		THROW(l);
 	}
 
-	struct protocol* ptl = l->protocol_begin(parent->children, name);
+	struct protocol* ptl = l->protocol_begin(parent->children,l->file, name);
 	ptl->parent = parent;
 
 	//跳过协议名
@@ -556,7 +563,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 	//协议名后有>=0个空格，空格之后必须是{
 	if (!expect(l, 0, '{'))
 	{
-		fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
+		fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 		THROW(l);
 	}
 
@@ -575,7 +582,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		{
 			if (!eos(l,1) && !expect_space(l, 1))
 			{
-				fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
+				fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 				THROW(l);
 			}
 			l->protocol_over(parent->children);
@@ -586,7 +593,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		err = sscanf(l->c, "%64s", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 		int len = strlen(name);
@@ -614,14 +621,14 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 			struct protocol* protocol = query_protocol(parent->children, name);
 			if (protocol == NULL)
 			{
-				fprintf(stderr, "file:%s@line:%d syntax error:unknown type:%s\n", l->file, l->line, name);
+				fprintf(stderr, "%s@line:%d syntax error:unknown type:%s\n", l->file, l->line, name);
 				THROW(l);
 			}			
 		}
 
 		if (expect_space(l,len) == 0)
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 
@@ -632,7 +639,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		err = sscanf(l->c, "%64[1-9a-zA-Z_]", name);
 		if (err == 0)
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 		len = strlen(name);
@@ -641,7 +648,7 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 		//每一个字段名之后，必有空格
 		if (!expect_space(l, len))
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error:expect space\n",l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error:expect space\n",l->file, l->line);
 			THROW(l);
 		}
 	}
@@ -655,7 +662,7 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 
 	int err = sscanf(l->c, "%64[1-9a-zA-Z]", name);
 	if (err == 0) {
-		fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
+		fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 		THROW(l);
 	}
 
@@ -669,18 +676,18 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 	{
 		if (!expect_space(l,len))
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error:expect space\n", l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error:expect space\n", l->file, l->line);
 			THROW(l);
 		}
 		next_token(l);
 		if (!expect(l,0,'\"'))
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error:expect \"\n", l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error:expect \"\n", l->file, l->line);
 			THROW(l);
 		}
 		err = sscanf(l->c, "\"%64[^\"]\"", name);
 		if (err == 0) {
-			fprintf(stderr, "file:%s@line:%d syntax error\n", l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
 
@@ -691,12 +698,12 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 		skip(l, strlen(name) + 2);
 		if (!expect_space(l, 0))
 		{
-			fprintf(stderr, "file:%s@line:%d syntax error:expect space\n",l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error:expect space\n",l->file, l->line);
 			THROW(l);
 		}
 		return;
 	}
-	fprintf(stderr, "file:%s@line:%d syntax error:unknown %s\n", l->file, l->line, name);
+	fprintf(stderr, "%s@line:%d syntax error:unknown %s\n", l->file, l->line, name);
 	THROW(l);
 }
 

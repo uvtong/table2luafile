@@ -17,8 +17,8 @@ protocol test1
 
 protocol testdsf
 {
-	test_1 A string
-	string string
+	test_1 A
+	string a
 }
 
 protocol test2{
