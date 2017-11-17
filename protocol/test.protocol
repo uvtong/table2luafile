@@ -1,7 +1,7 @@
 
 
 
-import "other"
+import"other"
 
 import "other"
 
@@ -28,6 +28,7 @@ protocol test2{
 	}
 	double A_B
 	string B
+	InnerProtocol[] inner
 }
 
 protocol Info

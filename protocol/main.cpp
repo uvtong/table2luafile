@@ -627,15 +627,23 @@ void parse_protocol(struct lexer* l, struct protocol* parent)
 			}
 
 			if (expect(l, strlen(tmp), '[') && expect(l, strlen(tmp)+1, ']'))
-			{
 				isarray = 1;
+
+			struct protocol* cursor = ptl;
+			struct protocol* protocol = NULL;
+			while (cursor)
+			{
+				protocol = query_protocol(cursor->children, tmp);
+				if (protocol != NULL)
+					break;
+				cursor = cursor->parent;
 			}
-			struct protocol* protocol = query_protocol(parent->children, tmp);
 			if (protocol == NULL)
 			{
 				fprintf(stderr, "%s@line:%d syntax error:unknown type:%s\n", l->file, l->line, tmp);
 				THROW(l);
 			}
+			
 			memcpy(name, tmp, strlen(tmp));
 			name[strlen(tmp)] = '\0';
 		}
@@ -688,12 +696,17 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 	}
 	else if (memcmp(name, "import", len) == 0)
 	{
-		if (!expect_space(l,len))
+		if (!expect_space(l, len) && !expect(l, len, '\"'))
 		{
-			fprintf(stderr, "%s@line:%d syntax error:expect space\n", l->file, l->line);
+			fprintf(stderr, "%s@line:%d syntax error\n", l->file, l->line);
 			THROW(l);
 		}
-		next_token(l);
+
+		if (expect_space(l, len))
+			next_token(l);
+		else
+			skip(l, len);
+		
 		if (!expect(l,0,'\"'))
 		{
 			fprintf(stderr, "%s@line:%d syntax error:expect \"\n", l->file, l->line);
@@ -707,8 +720,7 @@ void lexer_parse(struct lexer* l, struct protocol* parent)
 
 		if (exist_file(l->main, name) == false)
 			import_protocol(l, name);
-		
-		
+
 		skip(l, strlen(name) + 2);
 		if (!expect_space(l, 0))
 		{
